@@ -1,0 +1,22 @@
+{
+  "name": "gravity-lander",
+  "version": "1.0.0",
+  "description": "太陽系の惑星に宇宙船を着陸させる物理シミュレーションゲーム",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx -y http-server -p 8080 -o",
+    "deploy": "gh-pages -d ."
+  },
+  "keywords": [
+    "game",
+    "physics",
+    "space",
+    "simulation"
+  ],
+  "author": "mkt918",
+  "license": "MIT",
+  "devDependencies": {
+    "gh-pages": "^6.1.1",
+    "http-server": "^14.1.1"
+  }
+}

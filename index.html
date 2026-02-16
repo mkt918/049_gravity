@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravity Lander - 重力着陸シミュレーター</title>
+    <meta name="description" content="太陽系の惑星に宇宙船を着陸させる物理シミュレーションゲーム">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div class="hud-panel" id="info-panel">
+                <div class="hud-item">
+                    <span class="label">速度:</span>
+                    <span id="velocity">0 m/s</span>
+                </div>
+                <div class="hud-item">
+                    <span class="label">高度:</span>
+                    <span id="altitude">0 km</span>
+                </div>
+                <div class="hud-item">
+                    <span class="label">燃料:</span>
+                    <span id="fuel">100%</span>
+                </div>
+                <div class="hud-item">
+                    <span class="label">時間倍率:</span>
+                    <span id="timescale">1x</span>
+                </div>
+            </div>
+            
+            <div class="hud-panel" id="controls-panel">
+                <h3>操作方法</h3>
+                <div class="control-item">← → : 回転</div>
+                <div class="control-item">↑ : 推力</div>
+                <div class="control-item">T : 時間倍率切替</div>
+                <div class="control-item">R : リセット</div>
+            </div>
+        </div>
+        
+        <!-- メニュー -->
+        <div id="menu" class="hidden">
+            <h1>Gravity Lander</h1>
+            <p>重力着陸シミュレーター</p>
+            <button id="start-btn">ゲーム開始</button>
+        </div>
+        
+        <!-- ゲームオーバー -->
+        <div id="game-over" class="hidden">
+            <h2 id="result-title"></h2>
+            <p id="result-message"></p>
+            <button id="restart-btn">再挑戦</button>
+        </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
