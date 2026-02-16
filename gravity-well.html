@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重力井戸 - 太陽系の時空曲率</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000010;
+            color: #ffffff;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 22px;
+            font-weight: bold;
+            text-align: center;
+            color: #ffffaa;
+            text-shadow: 0 0 20px #ffaa00;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #title span {
+            display: block;
+            font-size: 13px;
+            color: #aaaacc;
+            margin-top: 4px;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* 惑星情報パネル */
+        #planet-info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            z-index: 10;
+            pointer-events: none;
+            max-width: 95vw;
+        }
+
+        .planet-tag {
+            background: rgba(0,0,0,0.7);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .planet-tag .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* コントロールヒント */
+        #hint {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            font-size: 11px;
+            color: #666688;
+            text-align: right;
+            z-index: 10;
+            pointer-events: none;
+            line-height: 1.7;
+        }
+
+        /* 土星の環スタイル（キャンバス上で描画） */
+    </style>
+</head>
+<body>
+    <div id="title">
+        太陽系の重力井戸
+        <span>Gravity Well of the Solar System</span>
+    </div>
+
+    <div id="hint">
+        ドラッグ: 視点回転<br>
+        スクロール: ズーム<br>
+        R: リセット
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <div id="planet-info"></div>
+
+    <script>
+    // ======================================================
+    // 太陽系データ（重力井戸の深さは質量に比例）
+    // ======================================================
+    const SOLAR_SYSTEM = [
+        {
+            key: 'sun',
+            name: '太陽',
+            mass: 1.989e30,
+            radius: 696000,       // km
+            color: '#FDB813',
+            glowColor: '#FF8C00',
+            orbitRadius: 0,       // AU
+            ringRadius: null,
+            labelOffset: 0
+        },
+        {
+            key: 'mercury',
+            name: '水星',
+            mass: 3.285e23,
+            radius: 2440,
+            color: '#8C7853',
+            glowColor: null,
+            orbitRadius: 0.387,
+            ringRadius: null
+        },
+        {
+            key: 'venus',
+            name: '金星',
+            mass: 4.867e24,
+            radius: 6052,
+            color: '#FFC649',
+            glowColor: '#FF9900',
+            orbitRadius: 0.723,
+            ringRadius: null
+        },
+        {
+            key: 'earth',
+            name: '地球',
+            mass: 5.972e24,
+            radius: 6371,
+            color: '#4A90E2',
+            glowColor: '#00CCFF',
+            orbitRadius: 1.000,
+            ringRadius: null
+        },
+        {
+            key: 'mars',
+            name: '火星',
+            mass: 6.39e23,
+            radius: 3390,
+            color: '#E27B58',
+            glowColor: '#FF4400',
+            orbitRadius: 1.524,
+            ringRadius: null
+        },
+        {
+            key: 'jupiter',
+            name: '木星',
+            mass: 1.898e27,
+            radius: 71492,
+            color: '#C88B3A',
+            glowColor: '#AA6600',
+            orbitRadius: 5.203,
+            ringRadius: null
+        },
+        {
+            key: 'saturn',
+            name: '土星',
+            mass: 5.683e26,
+            radius: 60268,
+            color: '#FAD5A5',
+            glowColor: '#DDAA55',
+            orbitRadius: 9.537,
+            ringRadius: 2.3   // 惑星半径の倍率
+        },
+        {
+            key: 'uranus',
+            name: '天王星',
+            mass: 8.681e25,
+            radius: 25559,
+            color: '#4FD0E0',
+            glowColor: '#00BBCC',
+            orbitRadius: 19.19,
+            ringRadius: null
+        },
+        {
+            key: 'neptune',
+            name: '海王星',
+            mass: 1.024e26,
+            radius: 24622,
+            color: '#4166F5',
+            glowColor: '#0033CC',
+            orbitRadius: 30.07,
+            ringRadius: null
+        }
+    ];
+
+    // ======================================================
+    // キャンバス設定
+    // ======================================================
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let width, height;
+
+    function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', () => { resize(); });
+
+    // ======================================================
+    // 視点制御（等角投影 + 回転）
+    // ======================================================
+    let rotX = 55;    // 俯角（度）
+    let rotZ = -30;   // 水平回転（度）
+    let zoom = 1.0;
+
+    let isDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+
+    canvas.addEventListener('mousedown', e => {
+        isDragging = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+    });
+
+    canvas.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        const dx = e.clientX - lastMouseX;
+        const dy = e.clientY - lastMouseY;
+        rotZ += dx * 0.3;
+        rotX -= dy * 0.3;
+        rotX = Math.max(10, Math.min(89, rotX));
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+    });
+
+    canvas.addEventListener('mouseup', () => isDragging = false);
+    canvas.addEventListener('mouseleave', () => isDragging = false);
+
+    canvas.addEventListener('wheel', e => {
+        zoom *= e.deltaY > 0 ? 0.92 : 1.08;
+        zoom = Math.max(0.3, Math.min(3.0, zoom));
+        e.preventDefault();
+    }, { passive: false });
+
+    // タッチ操作
+    let lastTouchDist = 0;
+    canvas.addEventListener('touchstart', e => {
+        if (e.touches.length === 1) {
+            isDragging = true;
+            lastMouseX = e.touches[0].clientX;
+            lastMouseY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+            lastTouchDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+        }
+    });
+    canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (e.touches.length === 1 && isDragging) {
+            const dx = e.touches[0].clientX - lastMouseX;
+            const dy = e.touches[0].clientY - lastMouseY;
+            rotZ += dx * 0.3;
+            rotX -= dy * 0.3;
+            rotX = Math.max(10, Math.min(89, rotX));
+            lastMouseX = e.touches[0].clientX;
+            lastMouseY = e.touches[0].clientY;
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            zoom *= dist / lastTouchDist;
+            zoom = Math.max(0.3, Math.min(3.0, zoom));
+            lastTouchDist = dist;
+        }
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => isDragging = false);
+
+    // Rキーでリセット
+    document.addEventListener('keydown', e => {
+        if (e.key === 'r' || e.key === 'R') {
+            rotX = 55;
+            rotZ = -30;
+            zoom = 1.0;
+        }
+    });
+
+    // ======================================================
+    // スケール設定
+    // ======================================================
+    // 海王星軌道（30.07 AU）を表示範囲内に収める
+    const MAX_ORBIT_AU = 32;
+
+    // 重力井戸の深さ計算
+    // 深さ ∝ sqrt(GM/r) を使って表面ポテンシャルに比例
+    // 表示の都合上、太陽を基準に対数スケール調整
+    const SUN_MASS = 1.989e30;
+
+    function getWellDepth(planet) {
+        // 表面重力ポテンシャル ∝ mass / radius
+        // 視覚的に映えるよう対数スケール
+        const potential = planet.mass / (planet.radius * 1000); // SI換算
+        // 太陽の基準深さを大きく（視覚的に）
+        if (planet.key === 'sun') return 300;
+        // 各惑星はlog スケールで深さ算出
+        const logRatio = Math.log10(planet.mass / 1e23);
+        return Math.max(5, logRatio * 28);
+    }
+
+    // ======================================================
+    // 3D → 2D 投影関数（等角投影）
+    // ======================================================
+    function project(x3d, y3d, z3d) {
+        // Z軸回転（水平）
+        const rz = rotZ * Math.PI / 180;
+        const rx = rotX * Math.PI / 180;
+
+        // Z軸回転
+        const x1 = x3d * Math.cos(rz) - y3d * Math.sin(rz);
+        const y1 = x3d * Math.sin(rz) + y3d * Math.cos(rz);
+        const z1 = z3d;
+
+        // X軸回転（傾き）
+        const x2 = x1;
+        const y2 = y1 * Math.cos(rx) - z1 * Math.sin(rx);
+        const z2 = y1 * Math.sin(rx) + z1 * Math.cos(rx);  // 使わない
+
+        // 2D投影（等角）
+        const scale = zoom * Math.min(width, height) * 0.38 / MAX_ORBIT_AU;
+        return {
+            x: width / 2 + x2 * scale,
+            y: height / 2 - y2 * scale,
+            scale: scale,
+            z2: z2  // 深度ソート用
+        };
+    }
+
+    // ======================================================
+    // 重力井戸グリッドの生成
+    // ======================================================
+    function getGridZ(px, py, time) {
+        let totalDepth = 0;
+        for (const planet of SOLAR_SYSTEM) {
+            const depth = getWellDepth(planet);
+            // 惑星の2D位置（グリッド座標）
+            const orbitScale = planet.orbitRadius;
+            const angle = planet.key === 'sun' ? 0 : (time * (0.5 / planet.orbitRadius) * Math.PI / 180);
+            const px2 = orbitScale * Math.cos(angle);
+            const py2 = orbitScale * Math.sin(angle);
+
+            const dist = Math.sqrt((px - px2) ** 2 + (py - py2) ** 2) + 0.15;
+            // 1/r^0.5 の減衰（視覚的にきれい）
+            totalDepth += depth * 0.04 / (dist * 0.7 + 0.2);
+        }
+        return -totalDepth;  // 下方向が正
+    }
+
+    // ======================================================
+    // アニメーション
+    // ======================================================
+    let time = 0;
+    const GRID_LINES = 38;  // グリッド解像度
+    const GRID_SIZE = MAX_ORBIT_AU;
+
+    function buildGrid() {
+        // グリッド点のZ値を計算
+        const grid = [];
+        for (let i = 0; i <= GRID_LINES; i++) {
+            grid[i] = [];
+            for (let j = 0; j <= GRID_LINES; j++) {
+                const x = (i / GRID_LINES - 0.5) * 2 * GRID_SIZE;
+                const y = (j / GRID_LINES - 0.5) * 2 * GRID_SIZE;
+                const z = getGridZ(x, y, time);
+                const proj = project(x, y, z);
+                grid[i][j] = { x, y, z, sx: proj.x, sy: proj.y, z2: proj.z2 };
+            }
+        }
+        return grid;
+    }
+
+    // グリッドラインの色をZ値に基づいてカラーマップ
+    function wellColor(z, maxDepth) {
+        // z は負値（深い）→ 0（平面）
+        const t = Math.min(1, Math.abs(z) / (maxDepth * 0.6));
+        // 色: 暗い青 → 紫 → 輝く青緑
+        const r = Math.floor(t * 80);
+        const g = Math.floor(30 + t * 120);
+        const b = Math.floor(150 + t * 105);
+        const a = 0.25 + t * 0.55;
+        return `rgba(${r},${g},${b},${a})`;
+    }
+
+    function drawGrid(grid) {
+        const maxDepth = 200;
+        ctx.lineWidth = 0.7;
+
+        // 横ライン（iが固定、jが変化）
+        for (let i = 0; i <= GRID_LINES; i++) {
+            ctx.beginPath();
+            for (let j = 0; j <= GRID_LINES; j++) {
+                const p = grid[i][j];
+                if (j === 0) ctx.moveTo(p.sx, p.sy);
+                else ctx.lineTo(p.sx, p.sy);
+            }
+            // 中央ほど鮮やか
+            const centerI = Math.abs(i - GRID_LINES / 2) / (GRID_LINES / 2);
+            const minZ = Math.min(...grid[i].map(p => p.z));
+            ctx.strokeStyle = wellColor(minZ, maxDepth);
+            ctx.stroke();
+        }
+
+        // 縦ライン（jが固定、iが変化）
+        for (let j = 0; j <= GRID_LINES; j++) {
+            ctx.beginPath();
+            for (let i = 0; i <= GRID_LINES; i++) {
+                const p = grid[i][j];
+                if (i === 0) ctx.moveTo(p.sx, p.sy);
+                else ctx.lineTo(p.sx, p.sy);
+            }
+            const minZ = Math.min(...grid.map(row => row[j].z));
+            ctx.strokeStyle = wellColor(minZ, maxDepth);
+            ctx.stroke();
+        }
+    }
+
+    // ======================================================
+    // 惑星の描画
+    // ======================================================
+    function drawPlanets() {
+        const renderList = [];
+
+        for (const planet of SOLAR_SYSTEM) {
+            const orbitScale = planet.orbitRadius;
+            const angle = planet.key === 'sun' ? 0 : (time * (0.5 / planet.orbitRadius) * Math.PI / 180);
+            const wx = orbitScale * Math.cos(angle);
+            const wy = orbitScale * Math.sin(angle);
+            const wz = getGridZ(wx, wy, time);
+
+            const proj = project(wx, wy, wz);
+            const scale = zoom * Math.min(width, height) * 0.38 / MAX_ORBIT_AU;
+
+            // 表示半径（質量に合わせて調整）
+            let displayRadius;
+            if (planet.key === 'sun') {
+                displayRadius = Math.max(18, 22 * zoom);
+            } else {
+                const logR = Math.log10(planet.radius / 1000 + 1) * 14 * zoom;
+                displayRadius = Math.max(3, logR);
+            }
+
+            renderList.push({
+                planet,
+                sx: proj.x,
+                sy: proj.y,
+                z2: proj.z2,
+                displayRadius,
+                wx, wy, wz,
+                scale
+            });
+        }
+
+        // 深度ソート（奥から手前へ描画）
+        renderList.sort((a, b) => a.z2 - b.z2);
+
+        for (const item of renderList) {
+            const { planet, sx, sy, displayRadius, wx, wy, wz, scale } = item;
+
+            // 軌道楕円（地平面）
+            if (planet.orbitRadius > 0) {
+                const orbitScreenR = planet.orbitRadius * scale;
+                const center = project(0, 0, 0);
+
+                // 等角投影での軌道リング
+                ctx.save();
+                ctx.translate(center.x, center.y);
+
+                // 回転行列を適用して楕円として描画
+                const rz = rotZ * Math.PI / 180;
+                const rx = rotX * Math.PI / 180;
+
+                ctx.beginPath();
+                for (let a = 0; a <= Math.PI * 2; a += 0.05) {
+                    const ox = Math.cos(a) * planet.orbitRadius;
+                    const oy = Math.sin(a) * planet.orbitRadius;
+                    const p = project(ox, oy, 0);
+                    if (a === 0) ctx.moveTo(p.x - center.x, p.y - center.y);
+                    else ctx.lineTo(p.x - center.x, p.y - center.y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = planet.color + '30';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // グロー効果
+            if (planet.glowColor) {
+                const glowR = displayRadius * (planet.key === 'sun' ? 3.5 : 2.5);
+                const grd = ctx.createRadialGradient(sx, sy, displayRadius * 0.3, sx, sy, glowR);
+                grd.addColorStop(0, planet.glowColor + 'AA');
+                grd.addColorStop(1, planet.glowColor + '00');
+                ctx.beginPath();
+                ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
+                ctx.fillStyle = grd;
+                ctx.fill();
+            }
+
+            // 本体
+            const bodyGrd = ctx.createRadialGradient(
+                sx - displayRadius * 0.3, sy - displayRadius * 0.3, displayRadius * 0.1,
+                sx, sy, displayRadius
+            );
+            bodyGrd.addColorStop(0, lightenColor(planet.color, 60));
+            bodyGrd.addColorStop(0.5, planet.color);
+            bodyGrd.addColorStop(1, darkenColor(planet.color, 40));
+
+            ctx.beginPath();
+            ctx.arc(sx, sy, displayRadius, 0, Math.PI * 2);
+            ctx.fillStyle = bodyGrd;
+            ctx.fill();
+
+            // 太陽の輝き線
+            if (planet.key === 'sun') {
+                drawSunRays(sx, sy, displayRadius, time);
+            }
+
+            // 土星の環
+            if (planet.ringRadius) {
+                drawSaturnRing(sx, sy, displayRadius, planet.ringRadius, wx, wy, wz, scale);
+            }
+
+            // 地球の月
+            if (planet.key === 'earth') {
+                const moonAngle = time * 3 * Math.PI / 180;
+                const moonOrbit = displayRadius * 2.2;
+                const mx = sx + Math.cos(moonAngle) * moonOrbit;
+                const my = sy + Math.sin(moonAngle) * moonOrbit * 0.4;
+                ctx.beginPath();
+                ctx.arc(mx, my, Math.max(2, displayRadius * 0.27), 0, Math.PI * 2);
+                ctx.fillStyle = '#CCCCCC';
+                ctx.fill();
+            }
+
+            // ラベル
+            const labelY = sy - displayRadius - 6;
+            ctx.font = `bold ${planet.key === 'sun' ? 14 : 11}px Arial`;
+            ctx.textAlign = 'center';
+            // テキストシャドウ
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillText(planet.name, sx + 1, labelY + 1);
+            ctx.fillStyle = planet.key === 'sun' ? '#FFEE88' : '#FFFFFF';
+            ctx.fillText(planet.name, sx, labelY);
+
+            // 重力井戸の底への垂直線（スパイク）
+            const groundProj = project(wx, wy, 0);
+            ctx.beginPath();
+            ctx.moveTo(groundProj.x, groundProj.y);
+            ctx.lineTo(sx, sy);
+            ctx.strokeStyle = planet.color + '55';
+            ctx.lineWidth = 0.8;
+            ctx.setLineDash([3, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    // 太陽の光芒
+    function drawSunRays(cx, cy, r, t) {
+        const rayCount = 12;
+        for (let i = 0; i < rayCount; i++) {
+            const angle = (i / rayCount) * Math.PI * 2 + t * 0.01;
+            const len = r * (1.5 + 0.5 * Math.sin(t * 0.05 + i * 0.8));
+            const x2 = cx + Math.cos(angle) * (r + len);
+            const y2 = cy + Math.sin(angle) * (r + len);
+            const grd = ctx.createLinearGradient(cx, cy, x2, y2);
+            grd.addColorStop(0, '#FFD70090');
+            grd.addColorStop(1, '#FFD70000');
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = grd;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
+
+    // 土星の環
+    function drawSaturnRing(sx, sy, r, ringMult, wx, wy, wz, scale) {
+        const rx_rad = rotX * Math.PI / 180;
+        const ringOuter = r * ringMult * 1.1;
+        const ringInner = r * ringMult * 0.7;
+        const tilt = Math.sin(rx_rad) * 0.4;  // 投影での楕円率
+
+        ctx.save();
+        ctx.translate(sx, sy);
+
+        // 外側の環
+        ctx.beginPath();
+        ctx.ellipse(0, 0, ringOuter, ringOuter * tilt, 0, Math.PI, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(200,180,130,0.8)';
+        ctx.lineWidth = r * 0.35;
+        ctx.stroke();
+
+        // 惑星本体を重ねて前半を隠す
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#FAD5A5';
+        const grd2 = ctx.createRadialGradient(-r*0.3, -r*0.3, r*0.1, 0, 0, r);
+        grd2.addColorStop(0, lightenColor('#FAD5A5', 60));
+        grd2.addColorStop(1, darkenColor('#FAD5A5', 40));
+        ctx.fillStyle = grd2;
+        ctx.fill();
+
+        // 手前側の環
+        ctx.beginPath();
+        ctx.ellipse(0, 0, ringOuter, ringOuter * tilt, 0, 0, Math.PI);
+        ctx.strokeStyle = 'rgba(200,180,130,0.8)';
+        ctx.lineWidth = r * 0.35;
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // ======================================================
+    // カラーユーティリティ
+    // ======================================================
+    function lightenColor(hex, amount) {
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        return `rgb(${Math.min(255,r+amount)},${Math.min(255,g+amount)},${Math.min(255,b+amount)})`;
+    }
+
+    function darkenColor(hex, amount) {
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        return `rgb(${Math.max(0,r-amount)},${Math.max(0,g-amount)},${Math.max(0,b-amount)})`;
+    }
+
+    // ======================================================
+    // 星空背景（固定）
+    // ======================================================
+    let stars = [];
+    function initStars() {
+        stars = [];
+        for (let i = 0; i < 300; i++) {
+            stars.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                r: Math.random() * 1.5,
+                a: 0.3 + Math.random() * 0.7
+            });
+        }
+    }
+    initStars();
+    window.addEventListener('resize', initStars);
+
+    function drawStars() {
+        for (const s of stars) {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+            ctx.fill();
+        }
+    }
+
+    // ======================================================
+    // 凡例パネル生成
+    // ======================================================
+    function buildLegend() {
+        const panel = document.getElementById('planet-info');
+        panel.innerHTML = '';
+        for (const p of SOLAR_SYSTEM) {
+            const tag = document.createElement('div');
+            tag.className = 'planet-tag';
+            const dot = document.createElement('div');
+            dot.className = 'dot';
+            dot.style.background = p.color;
+            if (p.glowColor) dot.style.boxShadow = `0 0 6px ${p.glowColor}`;
+            const name = document.createElement('span');
+            name.textContent = p.name;
+            tag.appendChild(dot);
+            tag.appendChild(name);
+            panel.appendChild(tag);
+        }
+    }
+    buildLegend();
+
+    // ======================================================
+    // メインループ
+    // ======================================================
+    function render() {
+        // 背景
+        ctx.fillStyle = '#000010';
+        ctx.fillRect(0, 0, width, height);
+
+        // 星空
+        drawStars();
+
+        // 重力井戸グリッド
+        const grid = buildGrid();
+        drawGrid(grid);
+
+        // 惑星
+        drawPlanets();
+
+        // タイムカウント（アニメーション速度調整）
+        time += 0.5;
+
+        requestAnimationFrame(render);
+    }
+
+    render();
+    </script>
+</body>
+</html>

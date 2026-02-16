@@ -63,8 +63,8 @@ class Game {
         });
         this.physics.addBody(this.sun);
 
-        // 惑星
-        const planetNames = ['mercury', 'venus', 'earth', 'mars'];
+        // 惑星（全8惑星）
+        const planetNames = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
         for (const name of planetNames) {
             const config = CELESTIAL_BODIES[name];
             const planet = new Planet({
